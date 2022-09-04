@@ -1,6 +1,7 @@
 package dev.akif.tweettracker
 
 import dev.akif.tweettracker.twitter.Twitter
+import dev.akif.tweettracker.twitter.Twitter.TwitterError
 import sttp.capabilities.zio.ZioStreams
 import sttp.client3.SttpBackend
 import sttp.client3.asynchttpclient.zio.AsyncHttpClientZioBackend
@@ -11,15 +12,23 @@ import zio.logging.backend.SLF4J
 import java.io.IOException
 
 object Main extends ZIOAppDefault:
-  private lazy val asyncHttpClientZioBackend = AsyncHttpClientZioBackend.layer().orDie
-  private lazy val config                    = Config.live
-  private lazy val twitter                   = Twitter.live
-  private lazy val logger                    = Runtime.removeDefaultLoggers >>> SLF4J.slf4j
+  val asyncHttpClientZioBackend: ULayer[SttpBackend[Task, ZioStreams]] =
+    AsyncHttpClientZioBackend.layer().orDie
+
+  val config: ULayer[Config] =
+    Config.live
+
+  val twitter: URLayer[SttpBackend[Task, ZioStreams] & Config, Twitter] =
+    Twitter.live
+
+  val logger: ZLogger[String, Option[Unit]] =
+    SLF4J
+      .slf4jLogger(SLF4J.logFormatDefault, SLF4J.getLoggerName())
+      .filterLogLevel(_ >= LogLevel.Trace)
 
   override val run: UIO[ExitCode] =
-    Twitter
-      .streamTweets(containing = "crypto", forDuration = 30.seconds, upToTweets = 100)
-      .foldCauseZIO(cause => ZIO.logErrorCause("Failed to stream tweets", cause), tweets => ZIO.logInfo(tweets.toJson))
+    Twitter.streamTweets
+      .foldZIO(error => ZIO.fail(RuntimeException(error.log)), tweets => ZIO.logInfo(tweets.toJson))
       .provide(asyncHttpClientZioBackend, config, twitter)
-      .provideLayer(logger)
+      .provideLayer(Runtime.removeDefaultLoggers >>> Runtime.addLogger(logger))
       .exitCode

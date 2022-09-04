@@ -15,19 +15,26 @@ import zio.stream.{ZSink, ZStream}
 import zio.{System as _, *}
 
 import java.nio.charset.StandardCharsets
-import java.util.concurrent.TimeUnit
-import scala.concurrent.duration.Duration as ScalaDuration
 
 final case class TwitterLive(sttp: SttpBackend[Task, ZioStreams], config: Config) extends Twitter:
-  override def streamTweets(containing: String, forDuration: Duration, upToTweets: Int): IO[TwitterError, Tweets] =
+  override def streamTweets: IO[TwitterError, Tweets] =
+    val searchTerm = config.searchTerm
+    val forSeconds = config.forSeconds
+    val upToTweets = config.upToTweets
+
     for
-      _ <- ZIO.logInfo(s"Streaming tweets containing '$containing' for ${forDuration.toSeconds} seconds or up to $upToTweets tweets")
+      // TODO: Make sure a rule with search term is created before starting to stream tweets
+
+      _ <- ZIO.logInfo(s"Streaming tweets containing '$searchTerm' for $forSeconds seconds or up to $upToTweets tweets")
+
       startedAt = System.currentTimeMillis
-      deadline  = startedAt + forDuration.toMillis
+      deadline  = startedAt + (forSeconds * 1000L)
+
       bytes     <- getHttpStream
       rawTweets <- getTweetStream(bytes).runFoldWhile(Chunk.empty[TweetWithUser])(keepGettingTweets(_, upToTweets, deadline))(_ :+ _)
+
       _ <- ZIO.logInfo(
-        s"Streamed ${rawTweets.size} tweets containing '$containing' in ${(System.currentTimeMillis - startedAt) / 1000} seconds"
+        s"Streamed ${rawTweets.size} tweets containing '$searchTerm' in ${(System.currentTimeMillis - startedAt) / 1000} seconds"
       )
     yield
       val (userSet, usernamesToUnsortedTweets) =
@@ -70,7 +77,7 @@ final case class TwitterLive(sttp: SttpBackend[Task, ZioStreams], config: Config
 
   def getTweetStream(byteStream: ZStream[Any, Throwable, Byte]): ZStream[Any, TwitterError, TweetWithUser] =
     byteStream
-      .mapError { cause => TwitterError.CannotParseTweet("cannot process stream", "N/A") }
+      .mapError(cause => TwitterError.RequestFailed(cause.getMessage))
       .mapAccumZIO(Chunk.empty[Byte]) { (bytesSoFar, byte) =>
         if foundDelimiter(bytesSoFar, byte) then {
           // In here, last byte in `bytesSoFar` would be "\r" and `byte` would be "\n".
@@ -92,19 +99,25 @@ final case class TwitterLive(sttp: SttpBackend[Task, ZioStreams], config: Config
   def keepGettingTweets(tweets: Chunk[TweetWithUser], upToTweets: Int, deadline: Long): Boolean =
     tweets.size < upToTweets && System.currentTimeMillis < deadline
 
+  // TODO: Make this return Option[TweetWithUser]
   def parseTweet(bytes: Chunk[Byte]): IO[TwitterError, TweetWithUser] =
     val json = String(bytes.toArray, StandardCharsets.UTF_8)
 
-    ZIO
-      .fromEither(json.fromJson[TwitterResponse])
-      .flatMapError { cause =>
-        val error = TwitterError.CannotParseTweet(cause, json)
-        ZIO.logErrorCause(error.log, Cause.fail(error)).as(error)
-      }
-      .flatMap { response =>
-        val tweet = response.toTweetWithUser
-        ZIO.logInfo(tweet.toJson).as(tweet)
-      }
+    for
+      _ <- ZIO.logTrace(s"Received tweet: $json")
+
+      tweetWithUser <- ZIO
+        .fromEither(json.fromJson[TwitterResponse])
+        .flatMapError { cause =>
+          val error = TwitterError.CannotParseTweet(cause, json)
+          ZIO.logErrorCause(error.log, Cause.fail(error)).as(error)
+        }
+        .flatMap { response =>
+          // TODO: Filter if tweet matched to the rule we want (containing our search term)
+          val tweet = response.toTweetWithUser
+          ZIO.logDebug(tweet.toJson).as(tweet)
+        }
+    yield tweetWithUser
 
 object TwitterLive:
   val streamUri: Uri =

@@ -10,10 +10,10 @@ import sttp.client3.asynchttpclient.zio.AsyncHttpClientZioBackend
 import zio.*
 
 trait Twitter:
-  def streamTweets(containing: String, forDuration: Duration, upToTweets: Int): IO[TwitterError, Tweets]
+  def streamTweets: IO[TwitterError, Tweets]
 
 object Twitter:
-  lazy val live: ZLayer[SttpBackend[Task, ZioStreams] & Config, Nothing, Twitter] =
+  val live: ZLayer[SttpBackend[Task, ZioStreams] & Config, Nothing, Twitter] =
     ZLayer.fromFunction(TwitterLive.apply)
 
   enum TwitterError(val message: String, val details: String):
@@ -23,5 +23,5 @@ object Twitter:
 
     val log: String = s"$message: $details"
 
-  def streamTweets(containing: String, forDuration: Duration, upToTweets: Int): ZIO[Twitter, TwitterError, Tweets] =
-    ZIO.serviceWithZIO[Twitter](_.streamTweets(containing, forDuration, upToTweets))
+  def streamTweets: ZIO[Twitter, TwitterError, Tweets] =
+    ZIO.serviceWithZIO[Twitter](_.streamTweets)
