@@ -5,4 +5,4 @@ import zio.json.*
 final case class User(id: String, name: String, username: String, createdAt: Long)
 
 object User:
-  implicit val userEncoder: JsonEncoder[User] = DeriveJsonEncoder.gen[User]
+  given userEncoder: JsonEncoder[User] = DeriveJsonEncoder.gen[User]

@@ -18,10 +18,12 @@ val zioJson                = "dev.zio"                       %% "zio-json"      
 val zioLogging             = "dev.zio"                       %% "zio-logging-slf4j"             % zioLoggingVersion
 val zioStreams             = "dev.zio"                       %% "zio-streams"                   % zioVersion
 val zioTest                = "dev.zio"                       %% "zio-test"                      % zioVersion % Test
+val zioTestSbt             = "dev.zio"                       %% "zio-test-sbt"                  % zioVersion % Test
 
 lazy val root = (project in file("."))
   .settings(
     name := "tweet-tracker",
-    libraryDependencies ++= Seq(logback, sttpAsyncHttpClientZio, sttp, sttpZioJson, zio, zioLogging, zioStreams, zioTest),
-    scalacOptions += "-explain"
+    libraryDependencies ++= Seq(logback, sttpAsyncHttpClientZio, sttp, sttpZioJson, zio, zioLogging, zioStreams, zioTest, zioTestSbt),
+    scalacOptions += "-explain",
+    testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework")
   )
