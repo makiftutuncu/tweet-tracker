@@ -57,14 +57,15 @@ object TwitterSpec extends ZIOSpecDefault:
   val createRuleSuite: Spec[Any, TwitterError] =
     suite("creating rule for given search term on Twitter")(
       test("fails when sending request fails") {
+        val error = Exception("request-failed")
         val sttp =
           sttpStub
             .whenRequestMatches(_.uri == TwitterLive.rulesUri)
-            .thenRespondF(ZIO.fail(Exception("request-failed")))
+            .thenRespondF(ZIO.fail(error))
 
         TwitterLive(sttp, config)
           .createRule("test")
-          .assertFails(TwitterError.CreateRuleRequestFailed("request-failed"))
+          .assertFails(TwitterError.CreateRuleRequestFailed(error.toString))
       },
       test("fails when processing response body fails") {
         val error = DeserializationException("invalid", "deserialization-failed")
@@ -76,7 +77,7 @@ object TwitterSpec extends ZIOSpecDefault:
 
         TwitterLive(sttp, config)
           .createRule("test")
-          .assertFails(TwitterError.CreateRuleRequestFailed(error.getMessage))
+          .assertFails(TwitterError.CreateRuleRequestFailed(error.toString))
       },
       test("fails when rule id cannot be parsed from the response") {
         val sttp =
@@ -105,13 +106,14 @@ object TwitterSpec extends ZIOSpecDefault:
   val httpStreamSuite: Spec[Any, TwitterError] =
     suite("getting an http stream for tweets from Twitter")(
       test("fails when sending request fails") {
+        val error = Exception("request-failed")
         val sttp =
           sttpStub
             .whenRequestMatches(_.uri == TwitterLive.streamUri)
-            .thenRespondF(ZIO.fail(Exception("request-failed")))
+            .thenRespondF(ZIO.fail(error))
 
         TwitterLive(sttp, config).httpStream
-          .assertFails(TwitterError.StreamRequestFailed("request-failed"))
+          .assertFails(TwitterError.StreamRequestFailed(error.toString))
       },
       test("fails when processing response body fails") {
         val sttp =
@@ -165,10 +167,11 @@ object TwitterSpec extends ZIOSpecDefault:
   val tweetsFromBytesSuite: Spec[Any, TwitterError] =
     suite("getting tweets from bytes")(
       test("fails when underlying byte stream fails") {
+        val error = Exception("test")
         TwitterLive
-          .tweetsFromBytes(ZStream.fail(Exception("test")), "1")
+          .tweetsFromBytes(ZStream.fail(error), "1")
           .runCollect
-          .assertFails(TwitterError.StreamRequestFailed("test"))
+          .assertFails(TwitterError.StreamRequestFailed(error.toString))
       },
       test("returns empty stream when underlying byte stream terminates with no tweet parsed successfully") {
         TwitterLive

@@ -1,9 +1,11 @@
 package dev.akif.tweettracker.twitter
 
+import dev.akif.tweettracker.ZIOExtentions.log
 import dev.akif.tweettracker.twitter.TwitterLive.*
 import dev.akif.tweettracker.models.{TweetWithUser, Tweets, TwitterError, User}
 import dev.akif.tweettracker.twitter.models.{TwitterRuleResponse, TwitterStreamResponse}
 import dev.akif.tweettracker.Config
+import scala.concurrent.duration.Duration
 import sttp.capabilities.zio.ZioStreams
 import sttp.client3.*
 import sttp.client3.ziojson.*
@@ -16,6 +18,7 @@ import zio.{System as _, *}
 
 import java.nio.charset.StandardCharsets
 import java.time.Instant
+import java.util.concurrent.{TimeoutException, TimeUnit}
 
 final case class TwitterLive(sttp: SttpBackend[Task, ZioStreams], config: Config) extends Twitter:
   override def streamTweets: IO[TwitterError, Tweets] =
@@ -59,14 +62,14 @@ final case class TwitterLive(sttp: SttpBackend[Task, ZioStreams], config: Config
           .response(asJson[TwitterRuleResponse])
       )
       .flatMapError { cause =>
-        val error = TwitterError.CreateRuleRequestFailed(cause.getMessage)
-        ZIO.logErrorCause(error.log, Cause.fail(cause)).as(error)
+        val error = TwitterError.CreateRuleRequestFailed(cause.toString)
+        cause.log(error.log).as(error)
       }
       .flatMap { response =>
         response.body match
           case Left(cause) =>
-            val error = TwitterError.CreateRuleRequestFailed(cause.getMessage)
-            ZIO.logErrorCause(error.log, Cause.fail(cause)) *> ZIO.fail(error)
+            val error = TwitterError.CreateRuleRequestFailed(cause.toString)
+            cause.log(error.log) *> ZIO.fail(error)
 
           case Right(ruleResponse) =>
             ruleResponse.ruleIdFor(searchTerm)
@@ -80,20 +83,23 @@ final case class TwitterLive(sttp: SttpBackend[Task, ZioStreams], config: Config
           .auth
           .bearer(config.token)
           .response(asStreamUnsafe(ZioStreams))
+          .readTimeout(Duration(config.forSeconds, TimeUnit.SECONDS))
       )
-      .flatMapError { cause =>
-        val error = TwitterError.StreamRequestFailed(cause.getMessage)
-        ZIO.logErrorCause(error.log, Cause.fail(cause)).as(error)
-      }
-      .flatMap { response =>
-        response.body match
-          case Left(cause) =>
-            val error = TwitterError.StreamRequestFailed(cause)
-            ZIO.logErrorCause(error.log, Cause.fail(cause)) *> ZIO.fail(error)
+      .foldZIO(
+        { cause =>
+          val error = TwitterError.StreamRequestFailed(cause.toString)
+          cause.log(error.log) *> ZIO.fail(error)
+        },
+        { response =>
+          response.body match
+            case Left(cause) =>
+              val error = TwitterError.StreamRequestFailed(cause)
+              ZIO.logError(error.log) *> ZIO.fail(error)
 
-          case Right(stream) =>
-            ZIO.succeed(stream)
-      }
+            case Right(stream) =>
+              ZIO.succeed(stream)
+        }
+      )
 
 object TwitterLive:
   val rulesUri: Uri =
@@ -118,7 +124,8 @@ object TwitterLive:
     ruleId: String
   ): ZStream[Any, TwitterError, TweetWithUser] =
     byteStream
-      .mapError(cause => TwitterError.StreamRequestFailed(cause.getMessage))
+      .catchSome { case _: TimeoutException => ZStream.empty }
+      .mapError(cause => TwitterError.StreamRequestFailed(cause.toString))
       .mapAccumZIO[Any, TwitterError, Chunk[Byte], Chunk[TweetWithUser]](Chunk.empty) { (bytesSoFar, byte) =>
         if bytesSoFar.lastOption.contains(delimiter.head) && byte == delimiter.last then
           // In here, last byte in `bytesSoFar` would be "\r" and `byte` would be "\n".
@@ -146,7 +153,7 @@ object TwitterLive:
             .fromEither(json.fromJson[TwitterStreamResponse])
             .flatMapError { cause =>
               val error = TwitterError.CannotParseTweet(cause, json)
-              ZIO.logErrorCause(error.log, Cause.fail(error)).as(error)
+              ZIO.logError(error.log).as(error)
             }
             .flatMap(_.toTweetWithUserFor(ruleId))
     yield maybeTweetWithUser
