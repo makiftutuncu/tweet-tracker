@@ -19,7 +19,7 @@ object Main extends ZIOAppDefault:
     AsyncHttpClientZioBackend.layer().orDie
 
   val config: ULayer[Config] =
-    Config.live
+    Config.live.orDie
 
   val twitter: URLayer[SttpBackend[Task, ZioStreams] & Config, Twitter] =
     Twitter.live

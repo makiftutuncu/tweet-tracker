@@ -6,6 +6,7 @@ ThisBuild / scalaVersion := "3.2.0"
 val logbackVersion    = "1.4.0"
 val sttpVersion       = "3.7.6"
 val zioVersion        = "2.0.2"
+val zioConfigVersion  = "3.0.2"
 val zioJsonVersion    = "0.3.0-RC10"
 val zioLoggingVersion = "2.1.0"
 
@@ -14,6 +15,8 @@ val sttpAsyncHttpClientZio = "com.softwaremill.sttp.client3" %% "async-http-clie
 val sttp                   = "com.softwaremill.sttp.client3" %% "core"                          % sttpVersion
 val sttpZioJson            = "com.softwaremill.sttp.client3" %% "zio-json"                      % sttpVersion
 val zio                    = "dev.zio"                       %% "zio"                           % zioVersion
+val zioConfig              = "dev.zio"                       %% "zio-config"                    % zioConfigVersion
+val zioConfigTypesafe      = "dev.zio"                       %% "zio-config-typesafe"           % zioConfigVersion
 val zioJson                = "dev.zio"                       %% "zio-json"                      % zioJsonVersion
 val zioLogging             = "dev.zio"                       %% "zio-logging-slf4j"             % zioLoggingVersion
 val zioStreams             = "dev.zio"                       %% "zio-streams"                   % zioVersion
@@ -23,7 +26,19 @@ val zioTestSbt             = "dev.zio"                       %% "zio-test-sbt"  
 lazy val root = (project in file("."))
   .settings(
     name := "tweet-tracker",
-    libraryDependencies ++= Seq(logback, sttpAsyncHttpClientZio, sttp, sttpZioJson, zio, zioLogging, zioStreams, zioTest, zioTestSbt),
+    libraryDependencies ++= Seq(
+      logback,
+      sttpAsyncHttpClientZio,
+      sttp,
+      sttpZioJson,
+      zio,
+      zioConfig,
+      zioConfigTypesafe,
+      zioLogging,
+      zioStreams,
+      zioTest,
+      zioTestSbt
+    ),
     scalacOptions += "-explain",
     testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework")
   )
