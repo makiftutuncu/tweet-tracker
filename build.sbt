@@ -1,6 +1,6 @@
 Global / onChangedBuildSource := ReloadOnSourceChanges
 
-ThisBuild / version      := "0.1.0-SNAPSHOT"
+ThisBuild / version      := "0.1.0"
 ThisBuild / scalaVersion := "3.2.0"
 
 val logbackVersion    = "1.4.0"
@@ -42,3 +42,23 @@ lazy val root = (project in file("."))
     scalacOptions += "-explain",
     testFrameworks += new TestFramework("zio.test.sbt.ZTestFramework")
   )
+  .enablePlugins(JavaAppPackaging, DockerPlugin)
+
+import com.typesafe.sbt.packager.docker._
+
+dockerBaseImage := "amazoncorretto:18.0.2-al2"
+// By default there are many commands to create a user, group, set permissions etc. which I don't need
+dockerCommands := dockerCommands.value.flatMap {
+  case Cmd("WORKDIR", _*)                          => Seq(Cmd("WORKDIR", "."))
+  case Cmd("COPY", arg) if arg.contains("--chown") => Seq(Cmd("COPY", arg.split(" ").filterNot(_.startsWith("--chown")).mkString(" ")))
+  case Cmd("USER", _*)                             => Seq.empty
+  case Cmd("RUN", _*)                              => Seq.empty
+  case ExecCmd("RUN", _*)                          => Seq.empty
+  case c                                           => Seq(c)
+}
+dockerEnvVars := {
+  val keys = Set("SEARCH_TERM", "FOR_SECONDS", "UP_TO_TWEETS", "TOKEN")
+  sys.env.filterKeys(keys.contains)
+}
+dockerLabels       := Map("maintainer" -> "Mehmet Akif Tutuncu <m.akif.tutuncu@gmail.com>")
+dockerUpdateLatest := true
